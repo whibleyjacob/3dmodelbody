@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BodyModel } from './BodyModel.jsx';
+import { BodyModel } from './BodyModel';
 
 export default function App() {
   const [selectedBodyParts, setSelectedBodyParts] = useState([]);

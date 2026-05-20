@@ -1,0 +1,512 @@
+import React, { useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, PerspectiveCamera, RoundedBox } from '@react-three/drei';
+import * as THREE from 'three';
+
+// Materials - More professional, matte/soft look
+const blueMaterial = new THREE.MeshPhysicalMaterial({
+    color: '#38bdf8', // sky-400 (Lighter/Brighter than before to stand out)
+    roughness: 0.3,   // Reduced roughness for more light reflection
+    metalness: 0.1,
+    clearcoat: 0.3,   // Increased clearcoat for a "fresh" look
+    clearcoatRoughness: 0.1
+});
+
+const highlightMaterial = new THREE.MeshPhysicalMaterial({
+    color: '#ffffff',
+    roughness: 0.2,
+    metalness: 0.2,
+    emissive: '#e0f2fe',
+    emissiveIntensity: 0.3,
+    clearcoat: 0.3
+});
+
+const hoverMaterial = new THREE.MeshPhysicalMaterial({
+    color: '#7dd3fc', // sky-300
+    roughness: 0.3,
+    metalness: 0.1,
+    clearcoat: 0.2
+});
+
+const latShape = new THREE.Shape();
+const latH = 0.35;
+const latWTop = 0.14; // Slightly narrower than full shoulder width
+const latWBot = 0.09; // Taper to waist
+latShape.moveTo(0, latH / 2);      // Top Medial
+latShape.lineTo(0, -latH / 2);     // Bottom Medial
+latShape.lineTo(-latWBot, -latH / 2); // Bottom Lateral
+latShape.lineTo(-latWTop, latH / 2);  // Top Lateral
+latShape.closePath();
+
+const latSettings = {
+    steps: 1,
+    depth: 0.02, // Thinner core, bevel adds bulk
+    bevelEnabled: true,
+    bevelThickness: 0.02, // Rounder edges
+    bevelSize: 0.02,
+    bevelSegments: 4
+};
+
+// Face and Eye components removed
+
+
+interface InteractivePartProps extends React.ComponentPropsWithoutRef<'group'> {
+    name: string;
+    isSelected: boolean;
+    onClick: (name: string) => void;
+    children: React.ReactNode;
+}
+
+const InteractivePart: React.FC<InteractivePartProps> = ({ name, isSelected, onClick, children, ...props }) => {
+    const [hovered, setHovered] = useState(false);
+
+    const material = isSelected ? highlightMaterial : (hovered ? hoverMaterial : blueMaterial);
+
+    return (
+        <group
+            {...props}
+            onClick={(e) => {
+                e.stopPropagation();
+                onClick(name);
+            }}
+            onPointerOver={(e) => {
+                e.stopPropagation();
+                setHovered(true);
+                document.body.style.cursor = 'pointer';
+            }}
+            onPointerOut={(e) => {
+                e.stopPropagation();
+                setHovered(false);
+                document.body.style.cursor = 'auto';
+            }}
+        >
+            {React.Children.map(children, child => {
+                if (React.isValidElement(child)) {
+                    // @ts-ignore
+                    return React.cloneElement(child, { material });
+                }
+                return child;
+            })}
+        </group>
+    );
+};
+
+
+// Helper Components with RoundedBox where applicable
+const Capsule = ({ args, position = [0, 0, 0], rotation = [0, 0, 0], material }: { args: [number, number, number, number], position?: [number, number, number], rotation?: [number, number, number], material?: THREE.Material }) => (
+    <mesh position={position} rotation={rotation} material={material || blueMaterial}>
+        <capsuleGeometry args={args} />
+    </mesh>
+);
+
+const RoundedPart = ({ args, position = [0, 0, 0], radius = 0.02, smoothness = 4, rotation = [0, 0, 0], material }: { args: [number, number, number], position?: [number, number, number], radius?: number, smoothness?: number, rotation?: [number, number, number], material?: THREE.Material }) => (
+    <RoundedBox args={args} radius={radius} smoothness={smoothness} position={position} rotation={rotation} material={material || blueMaterial}>
+        {/* RoundedBox internals handle geometry */}
+    </RoundedBox>
+);
+
+const Hand = ({ side, namePrefix, selectedParts, onTogglePart }: { side: 'left' | 'right', namePrefix: string, selectedParts: string[], onTogglePart: (name: string) => void }) => {
+    const isLeft = side === 'left';
+    const isSelected = (name: string) => selectedParts.includes(name);
+
+    return (
+        <group>
+            {/* Split Hand into Palm (Anterior) and Back (Posterior) layers
+                Original Thickness: 0.02. Split into 0.01 each.
+                Radius reduced to 0.005 to minimize seam gap look.
+            */}
+
+            {/* Anterior Hand (Palm) - Front Half (+Z is front relative to hand? Hand is rotated.
+                Standard anatomical position: Palm is anterior.
+                Relative to these coords: Palm was at 0.
+                Let's assume +Z local is Anterior based on body layout.
+            */}
+            <InteractivePart name={`${namePrefix} Anterior Hand`} isSelected={isSelected(`${namePrefix} Anterior Hand`)} onClick={onTogglePart}>
+                {/* Palm Layer */}
+                <RoundedPart args={[0.06, 0.07, 0.01]} position={[0, -0.04, 0.005]} radius={0.005} material={undefined} />
+
+                {/* Fingers - visually part of Anterior (Palm) side for grabbing */}
+                <group position={[isLeft ? -0.02 : 0.02, -0.075, 0]}>
+                    <Capsule args={[0.008, 0.045, 4, 8]} material={undefined} />
+                </group>
+                <group position={[0, -0.08, 0]}>
+                    <Capsule args={[0.008, 0.05, 4, 8]} material={undefined} />
+                </group>
+                <group position={[isLeft ? 0.02 : -0.02, -0.075, 0]}>
+                    <Capsule args={[0.0075, 0.045, 4, 8]} material={undefined} />
+                </group>
+                <group position={[isLeft ? 0.035 : -0.035, -0.065, 0]}>
+                    <Capsule args={[0.007, 0.035, 4, 8]} material={undefined} />
+                </group>
+
+                {/* Thumb - Anterior */}
+                <group position={[isLeft ? -0.04 : 0.04, -0.02, 0]} rotation={[0, 0, isLeft ? 0.6 : -0.6]}>
+                    <mesh material={isSelected(`${namePrefix} Anterior Hand`) ? highlightMaterial : blueMaterial}>
+                        <sphereGeometry args={[0.012]} />
+                    </mesh>
+                    <Capsule args={[0.009, 0.04, 4, 8]} position={[0, -0.02, 0.01]} material={isSelected(`${namePrefix} Anterior Hand`) ? highlightMaterial : blueMaterial} />
+                </group>
+            </InteractivePart>
+
+            {/* Posterior Hand (Back) - Back Half */}
+            <InteractivePart name={`${namePrefix} Posterior Hand`} isSelected={isSelected(`${namePrefix} Posterior Hand`)} onClick={onTogglePart}>
+                <RoundedPart args={[0.06, 0.07, 0.01]} position={[0, -0.04, -0.005]} radius={0.005} material={undefined} />
+            </InteractivePart>
+        </group>
+    );
+};
+
+const Foot = ({ side, namePrefix, selectedParts, onTogglePart }: { side: 'left' | 'right', namePrefix: string, selectedParts: string[], onTogglePart: (name: string) => void }) => {
+    const isLeft = side === 'left';
+    const isSelected = (name: string) => selectedParts.includes(name);
+
+    // Foot Structure:
+    // Original Main Body: H=0.04 centered at -0.02 (top at 0, bottom at -0.04).
+    // Split:
+    //   Anterior (Dorsum): Top 0.03 (starts at 0, goes to -0.03). Center at -0.015.
+    //   Posterior (Sole): Bottom 0.01 (starts at -0.03, goes to -0.04). Center at -0.035.
+
+    return (
+        <group>
+            {/* Anterior Foot (Top) */}
+            <InteractivePart name={`${namePrefix} Anterior Foot`} isSelected={isSelected(`${namePrefix} Anterior Foot`)} onClick={onTogglePart}>
+                {/* Main Body Top Part */}
+                <RoundedPart args={[0.07, 0.03, 0.16]} position={[0, -0.015, 0.06]} radius={0.01} material={undefined} />
+
+                {/* Toes (Top/Front) */}
+                <group position={[0, -0.03, 0.15]}>
+                    <Capsule args={[0.011, 0.035, 4, 8]} position={[isLeft ? 0.02 : -0.02, 0, 0]} rotation={[Math.PI / 2, 0, 0]} material={undefined} />
+                    <Capsule args={[0.009, 0.035, 4, 8]} position={[isLeft ? 0.005 : -0.005, 0, 0]} rotation={[Math.PI / 2, 0, 0]} material={undefined} />
+                    <Capsule args={[0.008, 0.032, 4, 8]} position={[isLeft ? -0.008 : 0.008, 0, 0]} rotation={[Math.PI / 2, 0, 0]} material={undefined} />
+                    <Capsule args={[0.0075, 0.03, 4, 8]} position={[isLeft ? -0.02 : 0.02, 0, 0]} rotation={[Math.PI / 2, 0, 0]} material={undefined} />
+                    <Capsule args={[0.007, 0.028, 4, 8]} position={[isLeft ? -0.03 : 0.03, 0, 0]} rotation={[Math.PI / 2, 0, 0]} material={undefined} />
+                </group>
+            </InteractivePart>
+
+            {/* Posterior Foot (Sole + Heel) */}
+            <InteractivePart name={`${namePrefix} Posterior Foot`} isSelected={isSelected(`${namePrefix} Posterior Foot`)} onClick={onTogglePart}>
+                {/* Sole Layer - Thin layer at bottom */}
+                <RoundedPart args={[0.07, 0.01, 0.16]} position={[0, -0.035, 0.06]} radius={0.005} material={undefined} />
+
+                {/* Heel - clearly posterior */}
+                <mesh position={[0, -0.02, -0.02]} rotation={[0, Math.PI / 2, Math.PI / 2]} material={isSelected(`${namePrefix} Posterior Foot`) ? highlightMaterial : blueMaterial}>
+                    <cylinderGeometry args={[0.035, 0.035, 0.04, 16]} />
+                </mesh>
+            </InteractivePart>
+        </group>
+    );
+};
+
+interface BodyPartsProps {
+    selectedParts: string[];
+    onTogglePart: (part: string) => void;
+}
+
+const BodyParts: React.FC<BodyPartsProps> = ({ selectedParts, onTogglePart }) => {
+    const isSelected = (name: string) => selectedParts.includes(name);
+
+    return (
+        <group dispose={null}>
+            {/* Head */}
+            <InteractivePart name="Head" isSelected={isSelected("Head")} onClick={onTogglePart}>
+                <mesh position={[0, 1.7, 0]}>
+                    <sphereGeometry args={[0.11, 32, 32]} />
+                </mesh>
+            </InteractivePart>
+
+            {/* Right Neck */}
+            <InteractivePart name="Right Neck" isSelected={isSelected("Right Neck")} onClick={onTogglePart}>
+                <mesh position={[-0.026, 1.55, 0]}>
+                    <cylinderGeometry args={[0.03, 0.04, 0.12, 16]} />
+                </mesh>
+            </InteractivePart>
+
+            {/* Left Neck */}
+            <InteractivePart name="Left Neck" isSelected={isSelected("Left Neck")} onClick={onTogglePart}>
+                <mesh position={[0.026, 1.55, 0]}>
+                    <cylinderGeometry args={[0.03, 0.04, 0.12, 16]} />
+                </mesh>
+            </InteractivePart>
+
+            {/* Chest (Anterior Upper Torso) */}
+            <InteractivePart name="Chest" isSelected={isSelected("Chest")} onClick={onTogglePart}>
+                <RoundedPart args={[0.32, 0.35, 0.08]} position={[0, 1.35, 0.04]} radius={0.06} />
+            </InteractivePart>
+
+            {/* Upper Back (Posterior Upper Torso) - Split L/R */}
+            {/* Upper Back (Posterior Upper Torso) - Lat Shape */}
+            <InteractivePart name="Right Upper Back" isSelected={isSelected("Right Upper Back")} onClick={onTogglePart}>
+                {/* Position: Medial edge at -0.005. Z pushed back to align surface. */}
+                <mesh position={[-0.005, 1.35, -0.03]} rotation={[0, 0, 0]}>
+                    <extrudeGeometry args={[latShape, latSettings]} />
+                </mesh>
+            </InteractivePart>
+            <InteractivePart name="Left Upper Back" isSelected={isSelected("Left Upper Back")} onClick={onTogglePart}>
+                {/* Mirror for Left side: Scale X -1. Medial edge at +0.005 effectively. */}
+                <mesh position={[0.005, 1.35, -0.03]} rotation={[0, 0, 0]} scale={[-1, 1, 1]}>
+                    <extrudeGeometry args={[latShape, latSettings]} />
+                </mesh>
+            </InteractivePart>
+
+            {/* Abdomen (Anterior Lower Torso) */}
+            <InteractivePart name="Abdomen" isSelected={isSelected("Abdomen")} onClick={onTogglePart}>
+                <RoundedPart args={[0.26, 0.3, 0.12]} position={[0, 1.1, 0.06]} radius={0.06} />
+            </InteractivePart>
+
+            {/* Lower Back (Posterior Lower Torso) - Split L/R */}
+            <InteractivePart name="Right Lower Back" isSelected={isSelected("Right Lower Back")} onClick={onTogglePart}>
+                <RoundedPart args={[0.125, 0.25, 0.06]} position={[-0.065, 1.05, -0.06]} radius={0.025} />
+            </InteractivePart>
+            <InteractivePart name="Left Lower Back" isSelected={isSelected("Left Lower Back")} onClick={onTogglePart}>
+                <RoundedPart args={[0.125, 0.25, 0.06]} position={[0.065, 1.05, -0.06]} radius={0.025} />
+            </InteractivePart>
+
+            {/* Anterior Hips */}
+            <InteractivePart name="Anterior Hips" isSelected={isSelected("Anterior Hips")} onClick={onTogglePart}>
+                <RoundedPart args={[0.29, 0.16, 0.075]} position={[0, 0.9, 0.038]} radius={0.05} />
+            </InteractivePart>
+
+            {/* Posterior Hips (Glutes) - Split L/R */}
+            <InteractivePart name="Right Posterior Hip" isSelected={isSelected("Right Posterior Hip")} onClick={onTogglePart}>
+                <RoundedPart args={[0.14, 0.16, 0.075]} position={[-0.075, 0.9, -0.038]} radius={0.05} />
+            </InteractivePart>
+            <InteractivePart name="Left Posterior Hip" isSelected={isSelected("Left Posterior Hip")} onClick={onTogglePart}>
+                <RoundedPart args={[0.14, 0.16, 0.075]} position={[0.075, 0.9, -0.038]} radius={0.05} />
+            </InteractivePart>
+
+            {/* Split Hip Joints (Spheres) */}
+            <InteractivePart name="Right Hip" isSelected={isSelected("Right Hip")} onClick={onTogglePart}>
+                <mesh position={[-0.1, 0.82, 0]}>
+                    <sphereGeometry args={[0.065, 16, 16]} />
+                </mesh>
+            </InteractivePart>
+            <InteractivePart name="Left Hip" isSelected={isSelected("Left Hip")} onClick={onTogglePart}>
+                <mesh position={[0.1, 0.82, 0]}>
+                    <sphereGeometry args={[0.065, 16, 16]} />
+                </mesh>
+            </InteractivePart>
+
+
+            {/* Right Arm */}
+            <group position={[-0.22, 1.45, 0]}>
+                <InteractivePart name="Right Shoulder" isSelected={isSelected("Right Shoulder")} onClick={onTogglePart}>
+                    <mesh position={[0, 0, 0]}>
+                        <sphereGeometry args={[0.075, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Anterior Upper Arm" isSelected={isSelected("Right Anterior Upper Arm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.16, 0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.06, 0.05, 0.32, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Right Posterior Upper Arm" isSelected={isSelected("Right Posterior Upper Arm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.16, -0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.06, 0.05, 0.32, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Elbow" isSelected={isSelected("Right Elbow")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.34, 0]}>
+                        <sphereGeometry args={[0.05, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Anterior Forearm" isSelected={isSelected("Right Anterior Forearm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.5, 0.001]}>
+                        <cylinderGeometry args={[0.045, 0.035, 0.28, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Right Posterior Forearm" isSelected={isSelected("Right Posterior Forearm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.5, -0.001]}>
+                        <cylinderGeometry args={[0.045, 0.035, 0.28, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Wrist" isSelected={isSelected("Right Wrist")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.65, 0]}>
+                        <sphereGeometry args={[0.035, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <group position={[0, -0.68, 0]}>
+                    <Hand side="left" namePrefix="Right" selectedParts={selectedParts} onTogglePart={onTogglePart} />
+                </group>
+            </group>
+
+            {/* Left Arm */}
+            <group position={[0.22, 1.45, 0]}>
+                <InteractivePart name="Left Shoulder" isSelected={isSelected("Left Shoulder")} onClick={onTogglePart}>
+                    <mesh position={[0, 0, 0]}>
+                        <sphereGeometry args={[0.075, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Anterior Upper Arm" isSelected={isSelected("Left Anterior Upper Arm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.16, 0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.06, 0.05, 0.32, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Left Posterior Upper Arm" isSelected={isSelected("Left Posterior Upper Arm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.16, -0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.06, 0.05, 0.32, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Elbow" isSelected={isSelected("Left Elbow")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.34, 0]}>
+                        <sphereGeometry args={[0.05, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Anterior Forearm" isSelected={isSelected("Left Anterior Forearm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.5, 0.001]}>
+                        <cylinderGeometry args={[0.045, 0.035, 0.28, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Left Posterior Forearm" isSelected={isSelected("Left Posterior Forearm")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.5, -0.001]}>
+                        <cylinderGeometry args={[0.045, 0.035, 0.28, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Wrist" isSelected={isSelected("Left Wrist")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.65, 0]}>
+                        <sphereGeometry args={[0.035, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <group position={[0, -0.68, 0]}>
+                    <Hand side="right" namePrefix="Left" selectedParts={selectedParts} onTogglePart={onTogglePart} />
+                </group>
+            </group>
+
+            {/* Right Leg */}
+            <group position={[-0.1, 0.8, 0]}>
+                <InteractivePart name="Right Anterior Upper Leg" isSelected={isSelected("Right Anterior Upper Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.22, 0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.075, 0.055, 0.44, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Right Posterior Upper Leg" isSelected={isSelected("Right Posterior Upper Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.22, -0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.075, 0.055, 0.44, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Knee" isSelected={isSelected("Right Knee")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.46, 0]}>
+                        <sphereGeometry args={[0.055, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Anterior Lower Leg" isSelected={isSelected("Right Anterior Lower Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.7, 0.001]}>
+                        <cylinderGeometry args={[0.05, 0.04, 0.44, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Right Posterior Lower Leg" isSelected={isSelected("Right Posterior Lower Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.7, -0.001]}>
+                        <cylinderGeometry args={[0.05, 0.04, 0.44, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Right Ankle" isSelected={isSelected("Right Ankle")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.93, 0]}>
+                        <sphereGeometry args={[0.04, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <group position={[0, -0.95, 0.02]}>
+                    <Foot side="left" namePrefix="Right" selectedParts={selectedParts} onTogglePart={onTogglePart} />
+                </group>
+            </group>
+
+            {/* Left Leg */}
+            <group position={[0.1, 0.8, 0]}>
+                <InteractivePart name="Left Anterior Upper Leg" isSelected={isSelected("Left Anterior Upper Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.22, 0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.075, 0.055, 0.44, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Left Posterior Upper Leg" isSelected={isSelected("Left Posterior Upper Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.22, -0.001]} rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.075, 0.055, 0.44, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Knee" isSelected={isSelected("Left Knee")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.46, 0]}>
+                        <sphereGeometry args={[0.055, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Anterior Lower Leg" isSelected={isSelected("Left Anterior Lower Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.7, 0.001]}>
+                        <cylinderGeometry args={[0.05, 0.04, 0.44, 16, 1, false, -Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+                <InteractivePart name="Left Posterior Lower Leg" isSelected={isSelected("Left Posterior Lower Leg")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.7, -0.001]}>
+                        <cylinderGeometry args={[0.05, 0.04, 0.44, 16, 1, false, Math.PI / 2, Math.PI]} />
+                    </mesh>
+                </InteractivePart>
+
+                <InteractivePart name="Left Ankle" isSelected={isSelected("Left Ankle")} onClick={onTogglePart}>
+                    <mesh position={[0, -0.93, 0]}>
+                        <sphereGeometry args={[0.04, 16, 16]} />
+                    </mesh>
+                </InteractivePart>
+
+                <group position={[0, -0.95, 0.02]}>
+                    <Foot side="right" namePrefix="Left" selectedParts={selectedParts} onTogglePart={onTogglePart} />
+                </group>
+            </group>
+        </group>
+    );
+};
+
+interface BodyModelProps {
+    selectedBodyParts?: string[];
+    onToggleBodyPart?: (part: string) => void;
+}
+
+export const BodyModel: React.FC<BodyModelProps> = ({ selectedBodyParts = [], onToggleBodyPart = () => { } }) => {
+    return (
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', background: 'transparent' }}>
+            {/* Instruction Overlay Removed */}
+            <div style={{ width: '100%', height: '100%' }}>
+                <Canvas shadows camera={{ position: [0, 1.3, 2.5], fov: 50 }} dpr={[1, 2]}> {/* Move camera closer for larger model */}
+                    <PerspectiveCamera makeDefault position={[0, 1.3, 2.5]} />
+
+                    {/* Enhanced Lighting Setup for Better Visibility */}
+                    <ambientLight intensity={0.8} /> {/* Increased general brightness */}
+                    <spotLight position={[5, 10, 5]} angle={0.3} penumbra={0.5} intensity={2} castShadow /> {/* Stronger key light */}
+                    <pointLight position={[-5, 5, -5]} intensity={1} color="#38bdf8" /> {/* Rim light for contrast */}
+
+                    {/* Lighting - Instant local lights */}
+                    <hemisphereLight intensity={1.5} groundColor="#111827" color="#ffffff" /> {/* Increased global fill */}
+                    <BodyParts selectedParts={selectedBodyParts} onTogglePart={onToggleBodyPart} />
+
+                    <OrbitControls
+                        target={[0, 1.1, 0]} /* Shift target UP (to chest/abs) to move model visually DOWN */
+                        enableZoom={false}
+                        enablePan={false}
+                        minPolarAngle={Math.PI / 4}
+                        maxPolarAngle={Math.PI - 0.4}
+                        minDistance={2}
+                        maxDistance={5}
+                    />
+
+                    {/* Simple Shadow Plane instead of expensive ContactShadows */}
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1, 0]} receiveShadow>
+                        <planeGeometry args={[10, 10]} />
+                        <shadowMaterial opacity={0.2} />
+                    </mesh>
+                </Canvas>
+            </div>
+        </div>
+    );
+};
+
+export default BodyModel;
