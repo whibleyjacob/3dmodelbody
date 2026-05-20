@@ -129,7 +129,14 @@ const BodyParts = ({ selectedParts, onTogglePart }) => {
 // Main
 export const BodyModel = ({ selectedBodyParts = [], onToggleBodyPart = () => {} }) => {
     return (
-        <div className="w-full h-full flex items-center justify-center bg-transparent">
+        <div style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent'
+        }}>
             <Canvas camera={{ position: [0, 1.3, 2.5], fov: 50 }}>
                 <PerspectiveCamera makeDefault position={[0, 1.3, 2.5]} />
 
@@ -152,3 +159,5 @@ export const BodyModel = ({ selectedBodyParts = [], onToggleBodyPart = () => {} 
         </div>
     );
 };
+
+export default BodyModel;
